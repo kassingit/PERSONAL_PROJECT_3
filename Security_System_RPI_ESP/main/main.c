@@ -115,7 +115,7 @@ void app_main(void){
 
     esp_rom_delay_us(10000);
 
-    const char* message = "HELLO WORLD !";
+    const char* message = "HELLO WORLD ! =>";
     for (int i = 0; message[i] != '\0'; i++) {
         lcd_send_byte(message[i], 1); // rs=1 pour les données
         esp_rom_delay_us(100);
