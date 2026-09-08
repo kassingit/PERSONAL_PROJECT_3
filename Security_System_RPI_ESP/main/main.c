@@ -1,4 +1,3 @@
-//===== TEST GITHUB
 #include <driver/i2c_master.h>
 #include <esp_log.h>
 #include "esp_rom_sys.h"
@@ -69,6 +68,40 @@ void lcd_write_nibble(uint8_t nibble, uint8_t rs)
 
 }
 
+// SEND A BYTE
+void lcd_send_byte(uint8_t byte, uint8_t rs){
+    uint8_t first_nibble = (byte >> 4);
+    lcd_write_nibble(first_nibble, rs);
+
+    esp_rom_delay_us(100);
+
+    uint8_t second_nibble = byte & 0x0F;
+    lcd_write_nibble(second_nibble, rs);
+}
+
+
+void lcd_init(){
+    esp_rom_delay_us(50000); // 50ms
+
+    lcd_write_nibble(0x03, 0); // Envoie 0x03 en 4 bits
+    esp_rom_delay_us(4500);    // 4.5ms
+
+    lcd_write_nibble(0x03, 0); // 2ème fois
+    esp_rom_delay_us(4500);
+    
+    lcd_write_nibble(0x03, 0); // 3ème fois
+    esp_rom_delay_us(150);     // 150µs (pas 4.5ms)
+
+    lcd_write_nibble(0x02, 0); // Envoie 0x02 (qui est 0x20)
+
+    lcd_send_byte(0x28, 0); // Fonction Set
+
+    lcd_send_byte(0x0C, 0); // Display ON/OFF
+
+    lcd_send_byte(0x01, 0); // Clear Display
+
+    lcd_send_byte(0x06, 0); // Entry Mode Set
+}
 void app_main(void){
     ESP_ERROR_CHECK(i2c_master_init());
     addressScan();
@@ -81,4 +114,15 @@ void app_main(void){
 
     ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle,&dev_config,&lcd_handle));
     ESP_LOGI(TAG,"LCD device added to I2C bus");
+
+    lcd_init();
+
+    esp_rom_delay_us(10000); 
+
+    const char* message = "HELLO";
+    for(int i = 0; message[i] != '\0'; i++){
+        lcd_send_byte(message[i], 1); // rs=1 pour les données
+        esp_rom_delay_us(100);
+    }
+
 }
