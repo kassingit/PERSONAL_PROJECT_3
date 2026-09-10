@@ -1,6 +1,107 @@
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
 #include <driver/i2c_master.h>
 #include <esp_log.h>
 #include "esp_rom_sys.h"
+
+
+//============================ KEYPAD ZONE =========================================
+
+static const char *KEYPAD_TAG = "KEYPAD";
+
+// GPIO des lignes (sorties)
+#define ROW1_GPIO GPIO_NUM_12
+#define ROW2_GPIO GPIO_NUM_13
+#define ROW3_GPIO GPIO_NUM_14
+#define ROW4_GPIO GPIO_NUM_32
+
+// GPIO des colonnes (entrées avec pull-up)
+#define COL1_GPIO GPIO_NUM_4
+#define COL2_GPIO GPIO_NUM_5
+#define COL3_GPIO GPIO_NUM_18
+#define COL4_GPIO GPIO_NUM_19
+
+static const gpio_num_t row_pins[4] = {ROW1_GPIO, ROW2_GPIO, ROW3_GPIO, ROW4_GPIO};
+static const gpio_num_t col_pins[4] = {COL1_GPIO, COL2_GPIO, COL3_GPIO, COL4_GPIO};
+
+// Disposition physique du keypad
+static const char keymap[4][4] = {
+    {'1', '2', '3', 'A'},
+    {'4', '5', '6', 'B'},
+    {'7', '8', '9', 'C'},
+    {'*', '0', '#', 'D'}
+};
+
+void keypad_gpio_init(void)
+{
+    // Configuration des lignes en sortie, HIGH par défaut
+    for (int i = 0; i < 4; i++) {
+        gpio_reset_pin(row_pins[i]);
+        gpio_set_direction(row_pins[i], GPIO_MODE_OUTPUT);
+        gpio_set_level(row_pins[i], 1);
+    }
+
+    // Configuration des colonnes en entrée avec pull-up interne
+    for (int i = 0; i < 4; i++) {
+        gpio_reset_pin(col_pins[i]);
+        gpio_set_direction(col_pins[i], GPIO_MODE_INPUT);
+        gpio_set_pull_mode(col_pins[i], GPIO_PULLUP_ONLY);
+    }
+
+    ESP_LOGI(KEYPAD_TAG, "Keypad GPIO initialisés");
+}
+
+char keypad_scan(void)
+{
+    char key_pressed = 0;
+
+    for (int r = 0; r < 4; r++) {
+        // Met toutes les lignes à HIGH, sauf celle qu'on teste
+        for (int i = 0; i < 4; i++) {
+            gpio_set_level(row_pins[i], 1);
+        }
+        gpio_set_level(row_pins[r], 0);
+
+        // Petit délai pour laisser le signal se stabiliser électriquement
+        vTaskDelay(pdMS_TO_TICKS(1));
+
+        for (int c = 0; c < 4; c++) {
+            if (gpio_get_level(col_pins[c]) == 0) {
+                // Anti-rebond : on revérifie après un court délai
+                vTaskDelay(pdMS_TO_TICKS(20));
+                if (gpio_get_level(col_pins[c]) == 0) {
+                    key_pressed = keymap[r][c];
+
+                    // Attendre le relâchement de la touche avant de continuer
+                    while (gpio_get_level(col_pins[c]) == 0) {
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                    }
+                }
+            }
+        }
+    }
+
+    return key_pressed;
+}
+
+void keypad_task(void *pvParameters)
+{
+    keypad_gpio_init();
+
+    while (1) {
+        char key = keypad_scan();
+        if (key != 0) {
+            ESP_LOGI(KEYPAD_TAG, "Touche pressée : %c", key);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10)); // Petite pause entre chaque cycle de scan
+    }
+} 
+
+//==================================== I2C CREATION ================================================
+
+
 
 // SDA AND SCL PINS DEFINITION
 #define I2C_MASTER_SDA_IO GPIO_NUM_21
@@ -120,4 +221,5 @@ void app_main(void){
         lcd_send_byte(message[i], 1); // rs=1 pour les données
         esp_rom_delay_us(100);
     }
+    xTaskCreate(keypad_task, "keypad_task", 2048, NULL, 5, NULL);
 }
